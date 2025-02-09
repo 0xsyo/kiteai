@@ -209,7 +209,7 @@ async function countdown(randomTime) {
 }
 
 async function processWallet(wallet, headers, iterationsPerAgent) {
-  console.log(chalk.blue(`\nWallet: ${wallet}`));
+  console.log(chalk.greenBright(`\nWallet: ${wallet}`));
   for (const [agentId, agentName] of Object.entries(agents)) {
     console.log(chalk.magenta(`\nAgent: ${agentName}`));
     console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
