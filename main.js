@@ -2,28 +2,38 @@ import axios from 'axios';
 import fs from 'fs';
 import chalk from 'chalk';
 import { faker } from '@faker-js/faker';
+import { execSync } from 'child_process';
+import { SocksProxyAgent } from 'socks-proxy-agent';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { HttpProxyAgent } from 'http-proxy-agent';
 
 const agents = {
   "deployment_p5J9lz1Zxe7CYEoo0TZpRVay": "Professor",
-  "deployment_7sZJSiCqCNDy9bBHTEh7dwd9": "Crypto Buddy"
+  //"deployment_7sZJSiCqCNDy9bBHTEh7dwd9": "Crypto Buddy",
+  //"deployment_SoFftlsf9z4fyA3QCHYkaANq": "Sherlock"
 };
 
 const apiKey = 'your_groq_apikeys';
 const headersFilePath = 'headers.json';
+const proxyIndexFilePath = 'proxy_index.txt';
 let rateLimitExceeded = false;
 
 const ASCII_ART = `
- _______                          
-|     __|.--.--.---.-.-----.---.-.
-|__     ||  |  |  _  |-- __|  _  |
-|_______||___  |___._|_____|___._|
-         |_____|
+  _______                          
+ |     __|.--.--.---.-.-----.---.-.
+ |__     ||  |  |  _  |-- __|  _  |
+ |_______||___  |___._|_____|___._|
+          |_____|
 `;
 
-async function displayAppTitle() {
-  const gradient = await import('gradient-string');
-  console.log(gradient.default.rainbow(ASCII_ART));
-  console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+function rainbowBanner() {
+  const colors = [chalk.red, chalk.yellow, chalk.green, chalk.cyan, chalk.blue, chalk.magenta];
+  execSync(process.platform === 'win32' ? 'cls' : 'clear');
+  for (let i = 0; i < ASCII_ART.length; i++) {
+    process.stdout.write(colors[i % colors.length](ASCII_ART[i]));
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+  }
+  console.log(chalk.yellow("\n"));
 }
 
 function loadHeaders() {
@@ -149,23 +159,80 @@ async function generateRandomQuestion() {
   }
 }
 
-async function sendRandomQuestion(agent, headers) {
+function getCurrentTime() {
+  const now = new Date();
+  return now.toISOString().replace('T', ' ').split('.')[0];
+}
+
+function loadProxies() {
+  if (fs.existsSync('proxy.txt')) {
+    const proxyData = fs.readFileSync('proxy.txt', 'utf-8');
+    return proxyData.split('\n').filter(Boolean);
+  }
+  return [];
+}
+
+function saveProxyIndex(index) {
+  fs.writeFileSync(proxyIndexFilePath, index.toString());
+}
+
+function loadProxyIndex() {
+  if (fs.existsSync(proxyIndexFilePath)) {
+    const indexData = fs.readFileSync(proxyIndexFilePath, 'utf-8');
+    return parseInt(indexData, 10);
+  }
+  return 0;
+}
+
+function createProxyAgent(proxy) {
+  const [protocol, host, port] = proxy.split(/:\/\/|:/);
+  switch (protocol) {
+    case 'http':
+      return new HttpProxyAgent(`http://${host}:${port}`);
+    case 'socks4':
+      return new SocksProxyAgent(`socks4://${host}:${port}`);
+    case 'socks5':
+      return new SocksProxyAgent(`socks5://${host}:${port}`);
+    default:
+      throw new Error(`Unsupported proxy protocol: ${protocol}`);
+  }
+}
+
+async function sendRandomQuestion(agent, headers, proxy) {
   const randomQuestion = await generateRandomQuestion();
   if (rateLimitExceeded) {
     return { question: randomQuestion, response: { content: '' } };
   }
+
+  const proxyTimeout = 5000; // Timeout dalam milidetik untuk proxy
+  const config = {
+    headers: { 
+      'Content-Type': 'application/json',
+      ...headers,
+      'access-control-allow-origin': '*',
+      'cache-control': 'no-cache',
+      'connection': 'keep-alive'
+    },
+    timeout: proxyTimeout // Set timeout untuk request
+  };
+
+  if (proxy) {
+    config['httpAgent'] = createProxyAgent(proxy);
+    config['httpsAgent'] = createProxyAgent(proxy);
+    console.log(chalk.cyan(`Using proxy: ${proxy}`));
+  } else {
+    config['httpAgent'] = null;
+    config['httpsAgent'] = null;
+    console.log(chalk.cyan('Using direct connection'));
+  }
+
   try {
     const payload = { message: randomQuestion, stream: false };
-    const response = await axios.post(`https://${agent.toLowerCase().replace('_','-')}.stag-vxzy.zettablock.com/main`, payload, {
-      headers: { 
-        'Content-Type': 'application/json',
-        ...headers
-      }
-    });
+    const response = await axios.post(`https://${agent.toLowerCase().replace('_','-')}.stag-vxzy.zettablock.com/main`, payload, config);
     return { question: randomQuestion, response: response.data.choices[0].message };
   } catch (error) {
-    console.error(chalk.red('Error sending question:'), error.response ? error.response.data : error.message);
-    return { question: randomQuestion, response: { content: '' } };
+    console.error(chalk.red(`Error sending question: ${error.message}`));
+    return null;
   }
 }
 
@@ -188,7 +255,7 @@ async function reportUsage(wallet, options) {
     if (error.response && error.response.data && error.response.data.error && error.response.data.error.includes('Rate limit exceeded')) {
       console.error(chalk.red('Rate limit exceeded. Skipping this usage report.'));
     } else {
-      console.error(chalk.red('Failed to report usage:'), error.response ? error.response.data : error.message);
+      console.error(chalk.red('Failed to report usage.'));
     }
   }
 }
@@ -208,46 +275,102 @@ async function countdown(randomTime) {
   console.log();
 }
 
-async function processWallet(wallet, headers, iterationsPerAgent) {
-  console.log(chalk.greenBright(`\nWallet: ${wallet}`));
+async function processWallet(wallet, headers, iterationsPerAgent, proxies, usedProxies) {
+  console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+  console.log(chalk.greenBright(`${getCurrentTime()} - Wallet: ${wallet}`));
+  let proxyIndex = loadProxyIndex();
+  let currentProxy = null;
+
+  // Find a unique proxy for the wallet
+  while (!currentProxy && proxyIndex < proxies.length) {
+    const potentialProxy = proxies[proxyIndex % proxies.length];
+    if (!usedProxies.has(potentialProxy)) {
+      currentProxy = potentialProxy;
+      usedProxies.add(currentProxy);
+    }
+    proxyIndex++;
+  }
+
+  // If no proxy is available, use direct connection
+  if (!currentProxy && proxies.length === 0) {
+    console.log(chalk.yellow('No proxies available. Using direct connection.'));
+  } else if (!currentProxy) {
+    console.error(chalk.red('No available proxies left to use.'));
+    return;
+  }
+
+  saveProxyIndex(proxyIndex);
+
   for (const [agentId, agentName] of Object.entries(agents)) {
-    console.log(chalk.magenta(`\nAgent: ${agentName}`));
-    console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+    console.log(chalk.greenBright(`${getCurrentTime()} - Agent: ${agentName}`));
+    console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
 
     for (let i = 0; i < iterationsPerAgent; i++) {
-      console.log(chalk.yellow(`Literacy-${i + 1}`));
-      const nanya = await sendRandomQuestion(agentId, headers[wallet]);
-      if (!nanya || !nanya.response || !nanya.response.content) {
-        if (!rateLimitExceeded) {
-          rateLimitExceeded = true;
+      console.log(chalk.yellow(`${getCurrentTime()} - Iteration-${i + 1}`));
+      
+      let nanya = null;
+      let attempt = 0;
+
+      while (!nanya && attempt < (currentProxy ? proxies.length : 1)) {
+        nanya = await sendRandomQuestion(agentId, headers[wallet], currentProxy);
+        if (!nanya || !nanya.response || !nanya.response.content) {
+          if (currentProxy) {
+            console.log(chalk.red('Unable to send question, switching proxy...'));
+            usedProxies.delete(currentProxy); // Remove the failed proxy from usedProxies
+            currentProxy = null;
+
+            // Find a new unique proxy for the wallet
+            while (!currentProxy && proxyIndex < proxies.length) {
+              const potentialProxy = proxies[proxyIndex % proxies.length];
+              if (!usedProxies.has(potentialProxy)) {
+                currentProxy = potentialProxy;
+                usedProxies.add(currentProxy);
+              }
+              proxyIndex++;
+            }
+
+            if (!currentProxy) {
+              console.log(chalk.yellow('No proxies available. Using direct connection.'));
+              break;
+            }
+            attempt++;
+            await sleep(1000); // Tunggu sebelum mencoba lagi
+          } else {
+            break; // No proxy, use direct connection
+          }
         }
-        console.log(chalk.red('Unable to send question, error occurred.'));
-        continue; // Skip the rest of the loop and move to the next iteration
       }
 
-      const truncatedResponse = nanya.response.content.split(' ').slice(0, 7).join(' ') + '...';
-      console.log(chalk.cyan('Question:'), chalk.bold(nanya.question));
-      console.log(chalk.green('Answer:'), chalk.italic(truncatedResponse));
+      if (nanya && nanya.response && nanya.response.content) {
+        const truncatedResponse = nanya.response.content.split(' ').slice(0, 7).join(' ') + '...';
+        console.log(chalk.cyan('Question:'), chalk.bold(nanya.question));
+        console.log(chalk.green('Answer:'), chalk.italic(truncatedResponse));
 
-      await reportUsage(wallet.toLowerCase(), {
-        agent_id: agentId,
-        question: nanya.question,
-        response: nanya.response.content
-      });
+        await reportUsage(wallet.toLowerCase(), {
+          agent_id: agentId,
+          question: nanya.question,
+          response: nanya.response.content
+        });
 
-      await sleep(1000);
+        await sleep(1000);
+      } else {
+        console.log(chalk.red('Max retries reached. Unable to send question.'));
+      }
     }
 
-    console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+    console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
   }
 }
 
 async function main() {
-  await displayAppTitle();
+  console.clear(); // Tambahkan ini untuk membersihkan log konsol setiap kali kode dijalankan
+  rainbowBanner();
 
   const wallets = fs.readFileSync('wallet.txt', 'utf-8').split('\n').filter(Boolean);
+  const proxies = loadProxies();
   const headers = loadHeaders();
   const iterationsPerAgent = 7; // Update to only one iteration per agent
+  let usedProxies = new Set();
 
   for (const wallet of wallets) {
     if (!headers[wallet]) {
@@ -256,9 +379,9 @@ async function main() {
     }
 
     try {
-      await processWallet(wallet, headers, iterationsPerAgent);
+      await processWallet(wallet, headers, iterationsPerAgent, proxies, usedProxies);
     } catch (error) {
-      console.error(chalk.red(`Failed to process wallet ${wallet}:`), error.message);
+      console.error(chalk.red(`Failed to process wallet ${wallet}:`));
     }
   }
 
