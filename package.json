@@ -13,7 +13,10 @@
     "@faker-js/faker": "^8.0.0",
     "figlet": "^1.8.0",
     "fs": "^0.0.1-security",
-    "gradient-string": "^3.0.0"
+    "gradient-string": "^3.0.0",
+    "socks-proxy-agent": "^7.0.0",
+    "https-proxy-agent": "^7.0.0",
+    "http-proxy-agent": "^7.0.0"
   },
   "author": "Syaza"
 }
