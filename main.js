@@ -2,15 +2,13 @@ import axios from 'axios';
 import fs from 'fs';
 import chalk from 'chalk';
 import { faker } from '@faker-js/faker';
-import { execSync } from 'child_process';
 import { SocksProxyAgent } from 'socks-proxy-agent';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 import { HttpProxyAgent } from 'http-proxy-agent';
 
 const agents = {
-  "deployment-uu9y1z4z85rapgwkss1muuiz": "Professor",
-  "deployment-ecz5o55dh0dbqagkut47kzyc": "Crypto Buddy"
-  //"deployment-sofftlsf9z4fya3qchykaanq": "Sherlock"
+  "deployment_uu9y1z4z85rapgwkss1muuiz": "Professor",
+  "deployment_ecz5o55dh0dbqagkut47kzyc": "Crypto Buddy"
+  //"deployment_sofftlsf9z4fya3qchykaanq": "Sherlock"
 };
 
 const apiKey = 'your_groq_apikeys';
@@ -28,7 +26,7 @@ const ASCII_ART = `
 
 function rainbowBanner() {
   const colors = [chalk.red, chalk.yellow, chalk.green, chalk.cyan, chalk.blue, chalk.magenta];
-  execSync(process.platform === 'win32' ? 'cls' : 'clear');
+  console.clear();
   for (let i = 0; i < ASCII_ART.length; i++) {
     process.stdout.write(colors[i % colors.length](ASCII_ART[i]));
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
@@ -141,7 +139,8 @@ async function generateRandomQuestion() {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
-      }
+      },
+      timeout: 20000 // Set timeout to 20 seconds
     });
     
     // Kembalikan pertanyaan yang dihasilkan
@@ -198,13 +197,13 @@ function createProxyAgent(proxy) {
   }
 }
 
-async function sendRandomQuestion(agent, headers, proxy) {
+async function sendRandomQuestion(agent, headers, proxy, retries = 3) {
   const randomQuestion = await generateRandomQuestion();
   if (rateLimitExceeded) {
     return { question: randomQuestion, response: { content: '' } };
   }
 
-  const proxyTimeout = 5000; // Timeout dalam milidetik untuk proxy
+  const proxyTimeout = 60000; // Timeout dalam milidetik untuk proxy
   const config = {
     headers: { 
       'Content-Type': 'application/json',
@@ -226,13 +225,18 @@ async function sendRandomQuestion(agent, headers, proxy) {
     console.log(chalk.cyan('Using direct connection'));
   }
 
-  try {
-    const payload = { message: randomQuestion, stream: false };
-    const response = await axios.post(`https://${agent.toLowerCase().replace('_','-')}.stag-vxzy.zettablock.com/main`, payload, config);
-    return { question: randomQuestion, response: response.data.choices[0].message };
-  } catch (error) {
-    console.error(chalk.red(`Error sending question: ${error.message}`));
-    return null;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const payload = { message: randomQuestion, stream: false };
+      const response = await axios.post(`https://${agent.toLowerCase().replace('_','-')}.stag-vxzy.zettablock.com/main`, payload, config);
+      return { question: randomQuestion, response: response.data.choices[0].message };
+    } catch (error) {
+      console.error(chalk.red(`Error sending question (attempt ${attempt}):`), error.response ? error.response.data : error.message);
+      if (attempt === retries) {
+        return { question: randomQuestion, response: { content: '' } };
+      }
+      await sleep(2000); // Wait for 2 seconds before retrying
+    }
   }
 }
 
@@ -246,16 +250,20 @@ async function reportUsage(wallet, options) {
       request_metadata: {}
     };
 
-    await axios.post(`https://quests-usage-dev.prod.zettablock.com/api/report_usage`, payload, {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    const response = await axios.post(
+      `https://quests-usage-dev.prod.zettablock.com/api/report_usage`, 
+      payload, 
+      {
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
 
-    console.log(chalk.green('Usage data reported successfully!\n'));
+    console.log(chalk.green('Usage data reported successfully!'), response.data);
   } catch (error) {
-    if (error.response && error.response.data && error.response.data.error && error.response.data.error.includes('Rate limit exceeded')) {
-      console.error(chalk.red('Rate limit exceeded. Skipping this usage report.'));
+    if (error.response) {
+      console.error(chalk.red('Failed to report usage:'), error.response.data);
     } else {
-      console.error(chalk.red('Failed to report usage.'));
+      console.error(chalk.red('Failed to report usage:'), error.message);
     }
   }
 }
@@ -369,7 +377,7 @@ async function main() {
   const wallets = fs.readFileSync('wallet.txt', 'utf-8').split('\n').filter(Boolean);
   const proxies = loadProxies();
   const headers = loadHeaders();
-  const iterationsPerAgent = 7; // Update to only one iteration per agent
+  const iterationsPerAgent = 10; // Update to only one iteration per agent
   let usedProxies = new Set();
 
   for (const wallet of wallets) {
@@ -381,7 +389,7 @@ async function main() {
     try {
       await processWallet(wallet, headers, iterationsPerAgent, proxies, usedProxies);
     } catch (error) {
-      console.error(chalk.red(`Failed to process wallet ${wallet}:`));
+      console.error(chalk.red(`Failed to process wallet ${wallet}:`), error);
     }
   }
 
