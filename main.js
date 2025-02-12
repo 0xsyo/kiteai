@@ -258,7 +258,11 @@ async function reportUsage(wallet, options) {
       }
     );
 
-    console.log(chalk.green('Usage data reported successfully!'), response.data);
+    console.log(chalk.green('Usage data reported successfully!'));
+    console.log(chalk.green(`Interaction ID: ${response.data.interaction_id}`));
+    console.log(chalk.green(`Hashed Input Data: ${response.data.hashed_input_data}`));
+    console.log(chalk.green(`Hashed Output Data: ${response.data.hashed_output_data}`));
+    console.log(chalk.green(`Message: ${response.data.message}`));
   } catch (error) {
     if (error.response) {
       console.error(chalk.red('Failed to report usage:'), error.response.data);
