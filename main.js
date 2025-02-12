@@ -9,7 +9,7 @@ import { HttpProxyAgent } from 'http-proxy-agent';
 
 const agents = {
   "deployment-uu9y1z4z85rapgwkss1muuiz": "Professor",
-  "deployment-ecz5o55dh0dbqagkut47kzyc": "Crypto Buddy",
+  "deployment-ecz5o55dh0dbqagkut47kzyc": "Crypto Buddy"
   //"deployment-sofftlsf9z4fya3qchykaanq": "Sherlock"
 };
 
