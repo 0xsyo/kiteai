@@ -8,9 +8,9 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { HttpProxyAgent } from 'http-proxy-agent';
 
 const agents = {
-  "deployment_p5J9lz1Zxe7CYEoo0TZpRVay": "Professor",
-  //"deployment_7sZJSiCqCNDy9bBHTEh7dwd9": "Crypto Buddy",
-  //"deployment_SoFftlsf9z4fyA3QCHYkaANq": "Sherlock"
+  "deployment-uu9y1z4z85rapgwkss1muuiz": "Professor",
+  "deployment-ecz5o55dh0dbqagkut47kzyc": "Crypto Buddy",
+  //"deployment-sofftlsf9z4fya3qchykaanq": "Sherlock"
 };
 
 const apiKey = 'your_groq_apikeys';
