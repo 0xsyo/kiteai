@@ -6,9 +6,9 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import { HttpProxyAgent } from 'http-proxy-agent';
 
 const agents = {
-  "deployment_uu9y1z4z85rapgwkss1muuiz": "Professor",
-  "deployment_ecz5o55dh0dbqagkut47kzyc": "Crypto Buddy"
-  //"deployment_sofftlsf9z4fya3qchykaanq": "Sherlock"
+  "deployment_hp4y88pxnqxwlmpxllicjzzn": "Professor",
+  "deployment_nc3y3k7zy6gekszmcsordhu7": "Crypto Buddy",
+  "deployment_sofftlsf9z4fya3qchykaanq": "Sherlock"
 };
 
 const apiKey = 'your_groq_apikeys';
